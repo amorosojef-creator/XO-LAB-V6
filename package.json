@@ -1,0 +1,145 @@
+{
+  "name": "xo-lab",
+  "version": "5.1.0",
+  "private": true,
+  "description": "XO LAB — audio-reactive live visuals for DJs. Runs in the browser, on iPhone, Windows and macOS.",
+  "scripts": {
+    "build": "node scripts/build-web.mjs",
+    "start": "node scripts/serve.mjs 8080",
+    "test": "node tests/smoke.mjs",
+    "test:desktop": "node tests/desktop-smoke.mjs",
+    "desktop": "npm run build && electron .",
+    "dist:win": "npm run build && electron-builder --win --publish never",
+    "dist:mac": "npm run build && electron-builder --mac --publish never"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.6.0",
+    "@capacitor/core": "^7.6.0",
+    "@capacitor/filesystem": "^7.1.0",
+    "@capacitor/ios": "^7.6.0",
+    "@capacitor/share": "^7.0.0",
+    "electron": "43.8.12",
+    "electron-builder": "^26.18.0",
+    "playwright-core": "~1.56.0"
+  },
+  "main": "electron/main.js",
+  "author": "XO LAB",
+  "homepage": "https://github.com/amorosojef-creator/XO-LAB-V5",
+  "build": {
+    "appId": "com.xolab.app",
+    "productName": "XO LAB",
+    "copyright": "XO LAB",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**",
+      "www/**",
+      "package.json",
+      "!**/*.map"
+    ],
+    "asar": true,
+    "extraMetadata": {
+      "main": "electron/main.js"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "pkg",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "category": "public.app-category.entertainment",
+      "icon": "build/icon.png",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "minimumSystemVersion": "12.0",
+      "darkModeSupport": true,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "XO LAB listens to live audio so the visuals react to your music.",
+        "NSCameraUsageDescription": "XO LAB can use the camera as a live visual source."
+      },
+      "artifactName": "XO-LAB-${version}-mac-universal.${ext}"
+    },
+    "dmg": {
+      "title": "XO LAB ${version}",
+      "artifactName": "XO-LAB-${version}.dmg",
+      "contents": [
+        {
+          "x": 150,
+          "y": 190
+        },
+        {
+          "x": 410,
+          "y": 190,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ],
+      "window": {
+        "width": 560,
+        "height": 380
+      }
+    },
+    "pkg": {
+      "artifactName": "XO-LAB-${version}.pkg",
+      "identity": null,
+      "installLocation": "/Applications",
+      "allowAnywhere": false,
+      "isRelocatable": false,
+      "isVersionChecked": false
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "XO LAB",
+      "artifactName": "XO-LAB-Setup-${version}-${arch}.${ext}"
+    },
+    "portable": {
+      "artifactName": "XO-LAB-Portable-${version}-${arch}.${ext}"
+    },
+    "linux": {
+      "target": [
+        "dir"
+      ],
+      "icon": "build/icon.png",
+      "category": "AudioVideo"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/amorosojef-creator/XO-LAB-V5.git"
+  }
+}

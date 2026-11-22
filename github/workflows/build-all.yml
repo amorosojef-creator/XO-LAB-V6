@@ -1,0 +1,211 @@
+# XO LAB 5 — builds every installer on GitHub's computers. Nothing to install on yours.
+#   iPhone  → XO-LAB.ipa                          (unsigned, sideload it)
+#   Windows → XO-LAB-Setup-5.0.0-x64.exe / -arm64.exe, plus portable .exe versions
+#   Mac     → XO-LAB-5.0.0.dmg and XO-LAB-5.0.0.pkg (Universal: Intel + Apple Silicon, macOS 12 or later)
+# It runs by itself when you upload files to the main branch, or press "Run workflow" on the Actions tab.
+# Download the files from the run's "Artifacts" section. Push a tag like v5.0.0 to also get a GitHub Release.
+name: Build XO LAB (iPhone, Windows, Mac)
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write   # only used to attach the installers to a Release when you push a v* tag
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true   # several quick uploads → only the newest one is built
+
+env:
+  CSC_IDENTITY_AUTO_DISCOVERY: 'false'   # unsigned builds: never look for certificates
+  ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
+  ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
+
+jobs:
+  # ---------------------------------------------------------------- tests (must pass before anything is built)
+  test:
+    name: Test (browser + desktop app)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - name: Install packages
+        run: npm ci
+      - name: Build the web app
+        run: npm run build
+      - name: Browser smoke test (loads, effects, project save/open, undo, real render)
+        run: npm test
+      - name: Desktop app smoke test (Electron, app:// loader, menu, mic permission, real render)
+        run: xvfb-run -a npm run test:desktop
+
+  # Same tests on real Windows and Mac machines. Reported, but they don't hold back the installers.
+  test-other-os:
+    name: Test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-15]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run build
+      - name: Browser smoke test
+        run: npm test
+      - name: Desktop app smoke test
+        run: npm run test:desktop
+
+  # ---------------------------------------------------------------- iPhone
+  ios:
+    name: iPhone (.ipa)
+    needs: test
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - name: Install packages
+        run: npm ci
+        env: { ELECTRON_SKIP_BINARY_DOWNLOAD: '1' }
+      - name: Build the web app
+        run: npm run build
+      - name: Check CocoaPods
+        run: pod --version || sudo gem install cocoapods
+      - name: Prepare the iOS project
+        run: bash scripts/ios-setup.sh
+      - name: Copy the app into the iOS project
+        run: npx cap sync ios
+      - name: Build the app (unsigned)
+        run: |
+          set -o pipefail
+          cd ios/App
+          xcodebuild \
+            -workspace App.xcworkspace -scheme App -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            archive > "$RUNNER_TEMP/xcodebuild.log" 2>&1 || true
+          grep -E "error:|\*\* ARCHIVE" "$RUNNER_TEMP/xcodebuild.log" || true
+          if [ ! -d "$RUNNER_TEMP/App.xcarchive/Products/Applications/App.app" ]; then
+            echo "::error::The iOS build failed. The last lines of the build log are below (full log is in the 'xcodebuild-log' artifact)."
+            tail -n 80 "$RUNNER_TEMP/xcodebuild.log"
+            exit 1
+          fi
+      - name: Package XO-LAB.ipa
+        run: |
+          rm -rf Payload && mkdir Payload
+          cp -R "$RUNNER_TEMP/App.xcarchive/Products/Applications/App.app" Payload/
+          zip -qry XO-LAB.ipa Payload
+          ls -lh XO-LAB.ipa
+      - uses: actions/upload-artifact@v4
+        with: { name: XO-LAB-iPhone, path: XO-LAB.ipa, retention-days: 30 }
+      - name: Upload build log (only if something failed)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with: { name: xcodebuild-log, path: '${{ runner.temp }}/xcodebuild.log', if-no-files-found: ignore }
+
+  # ---------------------------------------------------------------- Windows
+  windows:
+    name: Windows (.exe)
+    needs: test
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: actions/cache@v4
+        with:
+          path: .cache
+          key: electron-win-${{ hashFiles('package-lock.json') }}
+      - name: Install packages
+        run: npm ci
+      - name: Build the web app
+        run: npm run build
+      - name: Build the Windows installers (x64 + ARM64, installer + portable)
+        run: npx electron-builder --win --publish never
+      - uses: actions/upload-artifact@v4
+        with: { name: XO-LAB-Windows, path: 'dist/*.exe', retention-days: 30 }
+      - name: Check the installers
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem dist -Filter *.exe
+          $files | ForEach-Object { "{0}  {1:N1} MB" -f $_.Name, ($_.Length / 1MB) }
+          foreach ($want in 'XO-LAB-Setup-*-x64.exe','XO-LAB-Setup-*-arm64.exe','XO-LAB-Portable-*-x64.exe','XO-LAB-Portable-*-arm64.exe') {
+            $f = $files | Where-Object Name -like $want
+            if (-not $f) { Write-Error "Missing $want"; exit 1 }
+            if ($f.Length -lt 50MB) { Write-Error "$($f.Name) is too small"; exit 1 }
+          }
+      - name: Silent install test (x64)
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem dist -Filter 'XO-LAB-Setup-*-x64.exe').FullName
+          Start-Process $setup -ArgumentList '/S' -Wait
+          $exe = Join-Path $env:LOCALAPPDATA 'Programs\XO LAB\XO LAB.exe'
+          if (-not (Test-Path $exe)) { Write-Error "Installed app not found at $exe"; exit 1 }
+          "Installed: $exe"
+
+  # ---------------------------------------------------------------- Mac
+  mac:
+    name: Mac (.dmg + .pkg)
+    needs: test
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - uses: actions/cache@v4
+        with:
+          path: .cache
+          key: electron-mac-${{ hashFiles('package-lock.json') }}
+      - name: Install packages
+        run: npm ci
+      - name: Build the web app
+        run: npm run build
+      - name: Build the Mac installers (Universal, ad-hoc signed)
+        run: npx electron-builder --mac --publish never
+      - uses: actions/upload-artifact@v4
+        with: { name: XO-LAB-Mac, path: "dist/*.dmg\ndist/*.pkg", retention-days: 30 }
+      - name: Check the app
+        run: |
+          set -e
+          ls -lh dist/*.dmg dist/*.pkg
+          APP="$(ls -d dist/mac-universal/*.app | head -1)"
+          BIN="$APP/Contents/MacOS/$(defaults read "$PWD/$APP/Contents/Info" CFBundleExecutable)"
+          ARCHS="$(lipo -archs "$BIN")"; echo "Architectures: $ARCHS"
+          [[ "$ARCHS" == *x86_64* && "$ARCHS" == *arm64* ]] || { echo "::error::Not a Universal app"; exit 1; }
+          echo "Minimum macOS: $(defaults read "$PWD/$APP/Contents/Info" LSMinimumSystemVersion)"
+          codesign --verify --deep --strict "$APP" && echo "Signature: ad-hoc, valid"
+          defaults read "$PWD/$APP/Contents/Info" NSMicrophoneUsageDescription
+
+  # ---------------------------------------------------------------- Release (only when you push a v* tag)
+  release:
+    name: GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [ios, windows, mac]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: out, merge-multiple: true }
+      - name: Checksums
+        run: cd out && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: XO LAB ${{ github.ref_name }}
+          files: out/*
+          body: |
+            **iPhone:** XO-LAB.ipa (sideload with Sideloadly or AltStore)
+            **Windows 10/11:** XO-LAB-Setup-…-x64.exe (most PCs) or -arm64.exe (Snapdragon PCs). Portable versions run without installing.
+            **Mac (macOS 12 Monterey or later, Intel + Apple Silicon):** XO-LAB-….dmg or .pkg
+            First open shows a warning because the app isn't signed — see INSTALL.md.

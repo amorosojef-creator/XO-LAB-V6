@@ -1,0 +1,15 @@
+{
+  "appId": "com.xolab.app",
+  "appName": "XO LAB",
+  "webDir": "www",
+  "backgroundColor": "#000000",
+  "zoomEnabled": false,
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#000000",
+    "scrollEnabled": false,
+    "allowsLinkPreview": false,
+    "zoomEnabled": false,
+    "preferredContentMode": "mobile"
+  }
+}
