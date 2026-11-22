@@ -47,7 +47,7 @@ await new Promise((r) => setTimeout(r, 600));
 
 const results = []; let failed = false;
 const check = (name, ok, detail) => { results.push((ok ? 'PASS ' : 'FAIL ') + name + (detail ? ' — ' + detail : '')); if (!ok) failed = true; };
-const browser = await chromium.launch({ executablePath: chrome, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required', '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'] });
+const browser = await chromium.launch({ executablePath: chrome, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'] });
 try {
   const page = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
   const errors = [];
@@ -57,6 +57,21 @@ try {
   await page.tap('#enter');
   check('viewport blocks pinch zoom', /user-scalable=no/.test(await page.getAttribute('meta[name=viewport]', 'content')));
   check('page touch-action is pan only', (await page.evaluate(() => getComputedStyle(document.documentElement).touchAction)) === 'pan-x pan-y');
+
+  // 5.0.1: the app must never scroll as a page (toggle clicks used to push the whole UI up and leave black below)
+  const pin = await page.evaluate(async () => {
+    const out = { docH: document.documentElement.scrollHeight, vh: innerHeight, jumps: [] };
+    for (const tab of ['media', 'track', 'model', 'fx', 'strobe', 'output']) {
+      XO.showTab(tab);
+      const tg = [...document.querySelectorAll('.panel.active label.toggle')].filter((l) => l.offsetParent);
+      for (const l of tg.slice(-2)) { l.click(); await new Promise((r) => setTimeout(r, 30)); l.click(); }
+      const top = document.querySelector('.topbar').getBoundingClientRect().top;
+      if (scrollY || document.documentElement.scrollTop || document.querySelector('.app').scrollTop || top < 0) out.jumps.push(tab + ':' + Math.round(top));
+    }
+    out.docH = Math.max(out.docH, document.documentElement.scrollHeight); XO.showTab('media'); XO.history.reset();
+    return out;
+  });
+  check('app stays pinned to the window (no page scroll on toggle clicks)', pin.docH <= pin.vh + 1 && !pin.jumps.length, JSON.stringify(pin));
 
   await page.setInputFiles('#modelInput', path.join(tmp, 'orb.obj'));
   await page.waitForFunction(() => XO.model.loaded, null, { timeout: 30000 });
@@ -140,181 +155,6 @@ try {
   check('project file is a standard zip', recent.zipBytes.join(',') === '80,75,3,4');
   const oldScene = await page.evaluate(() => { XO.applySnapshot(XO.migrate({ blob: { sens: 33 } }, '3.1.0')); const ok = XO.S.blob.sens === 33 && XO.S.model.material === 'original' && XO.S.out.size === '1080'; XO.resetAll(); XO.afterLoadState(); return ok; });
   check('V3 scene migrates (missing settings get defaults)', oldScene);
-
-  // ---------------- v5.0.1: live audio input ----------------
-  const liveIn = await page.evaluate(async () => {
-    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-    XO.showTab('media');
-    await XO.live.startAudio();
-    const A = XO.audio;
-    let peak = 0; for (let i = 0; i < 40; i++) { await wait(50); peak = Math.max(peak, A.raw); } // the fake mic beeps once a second
-    const r = { on: A.live.on, label: A.live.label, raw: peak, speakers: A.gain.gain.value, btn: document.getElementById('liveAudioBtn').textContent, devices: document.querySelectorAll('#liveAudioDevice option').length };
-    XO.set('audio.liveGain', 200); XO.onSetting('audio.liveGain', 200); await wait(200); r.gain = A.live.gain.gain.value;
-    XO.set('media.volume', 80); XO.onSetting('media.volume', 80); await wait(200); r.speakersAfterVolume = A.gain.gain.value;
-    XO.live.stopAudio(); await wait(300);
-    r.offOn = A.live.on; r.speakersAfter = A.gain.gain.value; r.stream = A.live.stream;
-    XO.set('audio.liveGain', 100); XO.set('media.volume', 90); XO.onSetting('media.volume', 90);
-    return r;
-  });
-  check('live audio input starts and the visuals hear it', liveIn.on && liveIn.raw > 0.01 && /STOP/.test(liveIn.btn), 'input: ' + liveIn.label + ' · peak level ' + liveIn.raw.toFixed(3));
-  check('live audio never plays out loud (no feedback)', liveIn.speakers < 0.01 && liveIn.speakersAfterVolume < 0.01, 'speaker gain while live: ' + liveIn.speakers.toFixed(3) + ' / after volume change: ' + liveIn.speakersAfterVolume.toFixed(3));
-  check('live gain slider changes the input level', Math.abs(liveIn.gain - 2) < 0.05, 'gain ' + liveIn.gain);
-  check('stopping live audio restores the track', !liveIn.offOn && liveIn.speakersAfter > 0.5 && liveIn.stream === null, 'speaker gain ' + liveIn.speakersAfter.toFixed(2));
-
-  // ---------------- v5.0.1: live camera ----------------
-  const cam = await page.evaluate(async () => {
-    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-    XO.set('blob.on', true); XO.syncUI();
-    await XO.live.startCamera();
-    await wait(1200);
-    const V = XO.state.V, c = document.getElementById('view');
-    const px = c.getContext('2d').getImageData(Math.floor(c.width / 2), Math.floor(c.height / 2), 1, 1).data;
-    const r = { kind: V.kind, w: V.w, h: V.h, tag: document.getElementById('modeTag').textContent, px: Array.from(px).slice(0, 3), blobs: XO.lastInfo ? XO.lastInfo.count : -1, btn: document.getElementById('cameraBtn').textContent };
-    let toast = ''; const t = XO.toast; XO.toast = (m) => { toast = m; }; await XO.qa.renderExport(); XO.toast = t; r.exportMsg = toast;
-    XO.set('media.camMirror', !XO.S.media.camMirror); await wait(200); r.mirrorOk = true;
-    const stream = XO.cam.stream;
-    XO.live.stopCamera(); await wait(300);
-    r.after = XO.state.V.kind; r.stopped = stream.getTracks().every((tr) => tr.readyState === 'ended');
-    return r;
-  });
-  check('live camera becomes the visual', cam.kind === 'camera' && cam.w > 0 && /LIVE CAMERA/.test(cam.tag) && /STOP/.test(cam.btn), cam.w + '×' + cam.h + ' · ' + cam.tag);
-  check('camera picture reaches the stage', cam.px.some((v) => v > 20), 'centre pixel rgb(' + cam.px.join(',') + ')');
-  check('blob tracking runs on the camera', cam.blobs >= 0, cam.blobs + ' boxes');
-  check('export explains the camera is live-only', /can't be rendered offline/.test(cam.exportMsg));
-  check('stopping the camera releases it', cam.after === null && cam.stopped);
-
-  // ---------------- v5.1: MIDI — every control type ----------------
-  const mid = await page.evaluate(async () => {
-    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-    const M = XO.midi, H = (...d) => M.handle({ data: d }), F = () => M._flush();
-    const el = (k) => document.querySelector('input[type="range"][data-k="' + k + '"]');
-    const R = {};
-    localStorage.removeItem('xolab-midi-v2'); M.reload(); M.map = M.profiles[M.active].map;
-    const learn = async (target, msgs) => { M.setLearning(true); M.pick(target); msgs.forEach((d) => H(...d)); M._finishLearn(); M.setLearning(false); };
-    // 1. absolute knob, learned + detected
-    await learn({ t: 'range', k: 'blob.sens' }, [[0xb0, 21, 10], [0xb0, 21, 20], [0xb0, 21, 30]]);
-    const k1 = M.map['cc:1:21']; R.knobType = k1 && k1.type;
-    k1.takeover = false; k1.smooth = 0;
-    H(0xb0, 21, 127); F(); R.knobMax = XO.S.blob.sens; H(0xb0, 21, 0); F(); R.knobMin = XO.S.blob.sens;
-    Object.assign(k1.targets[0], { min: 0.25, max: 0.75 }); H(0xb0, 21, 127); F(); R.rangeMax = XO.S.blob.sens;
-    k1.targets[0].invert = true; H(0xb0, 21, 127); F(); R.inverted = XO.S.blob.sens;
-    Object.assign(k1.targets[0], { min: 0, max: 1, invert: false, curve: 'exp' }); H(0xb0, 21, 64); F(); R.expMid = XO.S.blob.sens;
-    k1.targets[0].curve = 'log'; H(0xb0, 21, 64); F(); R.logMid = XO.S.blob.sens;
-    k1.targets[0].curve = 'linear';
-    // 2. endless encoders: detection + each format
-    await learn({ t: 'range', k: 'blob.maxBlobs' }, [[0xb0, 22, 1], [0xb0, 22, 1], [0xb0, 22, 1]]);
-    const e1 = M.map['cc:1:22']; R.encType = e1 && e1.type + '/' + e1.rel; e1.accel = false; e1.smooth = 0;
-    XO.set('blob.maxBlobs', 10); XO.syncUI();
-    for (let i = 0; i < 5; i++) H(0xb0, 22, 1); F(); R.encUp = XO.S.blob.maxBlobs;
-    H(0xb0, 22, 127); H(0xb0, 22, 126); F(); R.encDown = XO.S.blob.maxBlobs;
-    await learn({ t: 'range', k: 'blob.minCells' }, [[0xb0, 23, 65], [0xb0, 23, 65], [0xb0, 23, 63]]); R.offsetDet = M.map['cc:1:23'].rel;
-    await learn({ t: 'range', k: 'blob.smooth' }, [[0xb0, 24, 1], [0xb0, 24, 1], [0xb0, 24, 65]]); R.signDet = M.map['cc:1:24'].rel;
-    R.decode = [M.decodeRel(65, 'offset'), M.decodeRel(63, 'offset'), M.decodeRel(66, 'sign'), M.decodeRel(126, 'twos')].join(',');
-    M.map['cc:1:22'].accel = true; XO.set('blob.maxBlobs', 5); XO.syncUI(); H(0xb0, 22, 1); H(0xb0, 22, 1); H(0xb0, 22, 1); F(); R.accel = XO.S.blob.maxBlobs; // fast clicks move further
-    // 3. fader soft takeover
-    await learn({ t: 'range', k: 'media.zoom' }, [[0xb0, 0, 40], [0xb0, 0, 50], [0xb0, 0, 60]]);
-    const fd = M.map['cc:1:0']; fd.type = 'fader'; fd.takeover = true; fd.smooth = 0;
-    XO.set('media.zoom', 175); XO.syncUI(); M.takeoverState().clear();
-    H(0xb0, 0, 10); F(); R.noJump = XO.S.media.zoom; R.waiting = M.live['cc:1:0'] && M.live['cc:1:0'].waiting !== undefined;
-    H(0xb0, 0, 40); F(); H(0xb0, 0, 70); F(); R.pickedUp = XO.S.media.zoom;
-    // 4. buttons: momentary, toggle, trigger
-    await learn({ t: 'action', a: 'blackout' }, [[0x90, 36, 100], [0x80, 36, 0]]); R.momType = M.map['note:1:36'].type;
-    H(0x90, 36, 100); R.blackOn = XO.perform.blackout; H(0x80, 36, 0); R.blackOff = XO.perform.blackout;
-    M.map['note:1:37'] = Object.assign(M.defaults('toggle'), { targets: [{ tg: { t: 'action', a: 'freeze' }, min: 0, max: 1, invert: false, curve: 'linear' }] });
-    H(0x90, 37, 100); H(0x80, 37, 0); R.tog1 = XO.perform.freeze; H(0x90, 37, 100); H(0x80, 37, 0); R.tog2 = XO.perform.freeze;
-    M.map['note:1:38'] = Object.assign(M.defaults('trigger'), { targets: [{ tg: { t: 'toggle', k: 'blob.on' }, min: 0, max: 1, invert: false, curve: 'linear' }] });
-    const b0 = XO.S.blob.on; H(0x90, 38, 100); await wait(30); const b1 = XO.S.blob.on; H(0x80, 38, 0); await wait(30); const b2 = XO.S.blob.on;
-    R.trigger = b1 !== b0 && b2 === b1;
-    // 5. pad velocity
-    M.map['note:1:40'] = Object.assign(M.defaults('pad'), { targets: [{ tg: { t: 'range', k: 'dof.amount' }, min: 0, max: 1, invert: false, curve: 'linear' }] });
-    M.map['note:1:40'].smooth = 0; H(0x90, 40, 64); F(); R.velocity = XO.S.dof.amount; H(0x80, 40, 0);
-    // 6. aftertouch pressure
-    M.map['cat:1'] = Object.assign(M.defaults('pressure'), { targets: [{ tg: { t: 'range', k: 'dof.bokeh' }, min: 0, max: 1, invert: false, curve: 'linear' }] }); M.map['cat:1'].smooth = 0;
-    H(0xd0, 127); F(); R.pressureHi = XO.S.dof.bokeh; H(0xd0, 0); F(); R.pressureLo = XO.S.dof.bokeh;
-    // 7. 14-bit CC
-    M.map['cc:1:7'] = Object.assign(M.defaults('fader'), { hiRes: true, takeover: false, smooth: 0, targets: [{ tg: { t: 'range', k: 'dof.size' }, min: 0, max: 1, invert: false, curve: 'linear' }] });
-    H(0xb0, 7, 64); H(0xb0, 39, 77); F(); R.hiResN = M.live['cc:1:7'].n;
-    // 8. pitch bend
-    M.map['pb:1'] = Object.assign(M.defaults('pitchbend'), { smooth: 0, targets: [{ tg: { t: 'range', k: 'dof.falloff' }, min: 0, max: 1, invert: false, curve: 'linear' }] });
-    H(0xe0, 0, 64); F(); R.pbMid = M.live['pb:1'].n; H(0xe0, 127, 127); F(); R.pbTop = XO.S.dof.falloff;
-    // 9. macro: one fader → 3 targets with their own ranges
-    M.map['cc:1:8'] = Object.assign(M.defaults('fader'), { takeover: false, smooth: 0, targets: [
-      { tg: { t: 'range', k: 'blob.sens' }, min: 0, max: 1, invert: false, curve: 'linear' },
-      { tg: { t: 'range', k: 'dof.amount' }, min: 0.5, max: 1, invert: false, curve: 'linear' },
-      { tg: { t: 'range', k: 'media.posX' }, min: 0, max: 1, invert: true, curve: 'linear' }] });
-    H(0xb0, 8, 127); F(); R.macro = [XO.S.blob.sens, XO.S.dof.amount, XO.S.media.posX];
-    // 10. shift layer
-    M.map['note:1:1'] = Object.assign(M.defaults('momentary'), { targets: [{ tg: { t: 'shift' }, min: 0, max: 1, invert: false, curve: 'linear' }] });
-    M.map['cc:1:30'] = Object.assign(M.defaults('knob'), { takeover: false, smooth: 0, targets: [{ tg: { t: 'range', k: 'media.posY' }, min: 0, max: 1, invert: false, curve: 'linear' }] });
-    M.map['S|cc:1:30'] = Object.assign(M.defaults('knob'), { takeover: false, smooth: 0, targets: [{ tg: { t: 'range', k: 'blob.minCells' }, min: 0, max: 1, invert: false, curve: 'linear' }] });
-    XO.set('media.posY', 0); XO.set('blob.minCells', 1); XO.syncUI();
-    H(0x90, 1, 127); H(0xb0, 30, 127); F(); const sh1 = [XO.S.media.posY, XO.S.blob.minCells]; H(0x80, 1, 0);
-    H(0xb0, 30, 0); F(); R.shift = { held: sh1, after: [XO.S.media.posY, XO.S.blob.minCells] };
-    // 11. crossfader scene morph
-    XO.resetAll(); XO.afterLoadState(); XO.set('blob.sens', 10); XO.scenes.save('XF A'); XO.set('blob.sens', 90); XO.scenes.save('XF B');
-    M.map['cc:1:9'] = Object.assign(M.defaults('crossfader'), { smooth: 0, sceneA: 'XF A', sceneB: 'XF B', targets: [{ tg: { t: 'xfade' }, min: 0, max: 1, invert: false, curve: 'linear' }] });
-    H(0xb0, 9, 0); F(); R.xfA = XO.S.blob.sens; H(0xb0, 9, 127); F(); R.xfB = XO.S.blob.sens; H(0xb0, 9, 32); F(); R.xfQuarter = XO.S.blob.sens;
-    // 12. program change → scene slot
-    M.map['pc:1'] = Object.assign(M.defaults('program'), { targets: [] });
-    const scList = XO.scenes.list().map((x) => x.name), idxB = scList.indexOf('XF B'), idxA = scList.indexOf('XF A');
-    H(0xc0, idxA); R.pcA = XO.S.blob.sens; H(0xc0, idxB); R.pcB = XO.S.blob.sens;
-    // 13. MIDI clock → BPM (fake clock at exactly 125 BPM)
-    M.prefs.clockSync = true; const realNow = performance.now.bind(performance); let fake = realNow();
-    performance.now = () => fake;
-    for (let i = 0; i < 60; i++) { fake += 60000 / (125 * 24); H(0xf8); }
-    performance.now = realNow; R.clockBpm = M.clock.bpm; R.clockMode = XO.S.audio.bpmMode; R.audioBpm = XO.audio.effectiveBpm();
-    M.prefs.clockSync = false; XO.S.audio.bpmMode = 'auto';
-    // 14. a burst of 500 CC messages in one second must not cost frames
-    const count = (ms) => new Promise((res) => { let n = 0; const end = performance.now() + ms; const f = (t) => { n++; if (t < end) requestAnimationFrame(f); else res(n); }; requestAnimationFrame(f); });
-    const base = await count(1000);
-    let sent = 0, handlerMs = 0;
-    const tmr = setInterval(() => { for (let i = 0; i < 25 && sent < 500; i++, sent++) { const t0 = performance.now(); H(0xb0, 8, sent % 128); handlerMs += performance.now() - t0; } }, 40);
-    const burst = await count(1000); clearInterval(tmr);
-    while (sent < 500) { const t0 = performance.now(); H(0xb0, 8, sent % 128); handlerMs += performance.now() - t0; sent++; }
-    const t1 = performance.now(); F(); const applyMs = performance.now() - t1;
-    R.burst = { base, burst, sent, handlerMs: +handlerMs.toFixed(1), applyMs: +applyMs.toFixed(1) };
-    // 15. old 5.0.1 mappings convert and still work
-    localStorage.removeItem('xolab-midi-v2'); localStorage.setItem('xolab-midi-map-v1', JSON.stringify({ 'cc:1:21': { t: 'range', k: 'blob.sens' }, 'note:1:36': { t: 'toggle', k: 'blob.on' } }));
-    M.reload(); R.migrated = Object.keys(M.map).map((k) => k + '=' + M.map[k].type).join(', ');
-    H(0xb0, 21, 127); F(); R.migratedWorks = XO.S.blob.sens === +el('blob.sens').max;
-    localStorage.removeItem('xolab-midi-map-v1');
-    // 16. starter profiles: every target exists
-    const missing = [];
-    Object.keys(XO.MIDI_STARTERS).forEach((n) => { const map = XO.MIDI_STARTERS[n].build(); Object.values(map).forEach((m) => m.targets.forEach((t) => { if ((t.tg.t === 'range' || t.tg.t === 'toggle') && !document.querySelector('[data-k="' + t.tg.k + '"]')) missing.push(n + ':' + t.tg.k); if (t.tg.t === 'action' && !M.ACTIONS[t.tg.a]) missing.push(n + ':' + t.tg.a); })); });
-    R.starters = { n: Object.keys(XO.MIDI_STARTERS).length, missing };
-    // 17. profile export → import round trip
-    const ex = M.exportProfile(); const imported = M.importProfile(JSON.parse(JSON.stringify(ex)), 'Round trip');
-    R.profile = imported === 'Round trip' && Object.keys(M.map).length === Object.keys(ex.map).length;
-    // 18. UI: MIDI tab renders rows + editor
-    XO.showTab('midi'); M.renderList(); const firstRow = document.querySelector('#midiList [data-open]'); if (firstRow) firstRow.click(); await wait(50);
-    R.ui = { rows: document.querySelectorAll('#midiList .midi-map').length, editor: !!document.querySelector('#midiList .midi-edit'), curve: !!document.getElementById('midiCurve'), chips: document.querySelectorAll('[data-midi-action]').length };
-    XO.perform.blackout = false; XO.perform.freeze = false; XO.resetAll(); XO.afterLoadState();
-    return R;
-  });
-  const sensMax = 100, near = (a, b, t = 1.01) => Math.abs(a - b) <= t;
-  check('MIDI knob: learned as absolute, full range', mid.knobType === 'knob' && mid.knobMax === sensMax && mid.knobMin === 0, mid.knobType + ' · ' + mid.knobMin + '…' + mid.knobMax);
-  check('MIDI knob: range, invert and curves', mid.rangeMax === 75 && mid.inverted === 25 && near(mid.expMid, 25.4, 1.5) && near(mid.logMid, 71, 1.5), 'range→' + mid.rangeMax + ' invert→' + mid.inverted + ' exp(½)→' + mid.expMid + ' log(½)→' + mid.logMid);
-  check('MIDI encoder: detected and steps up / down', mid.encType === 'encoder/twos' && mid.encUp === 15 && mid.encDown === 12, mid.encType + ' · 10 +5 → ' + mid.encUp + ', −3 → ' + mid.encDown);
-  check('MIDI encoder: all relative formats', mid.offsetDet === 'offset' && mid.signDet === 'sign' && mid.decode === '1,-1,-2,-2', 'detected offset=' + mid.offsetDet + ' sign=' + mid.signDet + ' · decode ' + mid.decode);
-  check('MIDI encoder: acceleration on fast turns', mid.accel > 8, '3 quick clicks from 5 → ' + mid.accel);
-  check('MIDI fader: soft takeover, no jump', mid.noJump === 175 && mid.waiting && mid.pickedUp !== 175, 'held at ' + mid.noJump + ' until crossing, then ' + mid.pickedUp);
-  check('MIDI buttons: momentary (learned), toggle, trigger', mid.momType === 'momentary' && mid.blackOn === true && mid.blackOff === false && mid.tog1 === true && mid.tog2 === false && mid.trigger, 'momentary ' + mid.blackOn + '/' + mid.blackOff + ' · toggle ' + mid.tog1 + '/' + mid.tog2 + ' · trigger once ' + mid.trigger);
-  check('MIDI pad velocity sets the amount', near(mid.velocity, 50, 1.5), 'velocity 64 → ' + mid.velocity + '%');
-  check('MIDI pressure (aftertouch)', mid.pressureHi === 100 && mid.pressureLo === 0);
-  check('MIDI 14-bit CC is finer than 1/127', Math.abs(mid.hiResN * 127 - Math.round(mid.hiResN * 127)) > 0.01, 'n = ' + mid.hiResN.toFixed(5));
-  check('MIDI pitch bend (centre + top)', near(mid.pbMid, 0.5, 0.001) && mid.pbTop === 100, 'centre ' + mid.pbMid.toFixed(3) + ' · top → ' + mid.pbTop);
-  check('MIDI macro: one fader, 3 targets, own ranges', mid.macro[0] === 100 && mid.macro[1] === 100 && mid.macro[2] === -100, mid.macro.join(' / '));
-  check('MIDI shift layer', mid.shift.held[1] === 80 && mid.shift.held[0] === 0 && mid.shift.after[0] === -100, JSON.stringify(mid.shift));
-  check('MIDI crossfader morphs Scene A ↔ B', mid.xfA === 10 && mid.xfB === 90 && near(mid.xfQuarter, 30.2, 1.5), 'A ' + mid.xfA + ' · ¼ ' + mid.xfQuarter.toFixed(1) + ' · B ' + mid.xfB);
-  check('MIDI program change loads a scene slot', mid.pcA === 10 && mid.pcB === 90);
-  check('MIDI clock sets the tempo', near(mid.clockBpm, 125, 0.2) && mid.clockMode === 'clock' && near(mid.audioBpm, 125, 0.2), mid.clockBpm + ' BPM · mode ' + mid.clockMode + ' · visuals use ' + mid.audioBpm);
-  // All 500 messages must cost less than one frame of work; where the machine draws at a real frame rate (≥ 30 fps), frames must stay within 10%.
-  const realFps = mid.burst.base >= 30;
-  check('MIDI burst: 500 messages cost under one frame', mid.burst.sent === 500 && mid.burst.handlerMs + mid.burst.applyMs < 16 && (!realFps || mid.burst.burst >= mid.burst.base * 0.9), 'handling ' + mid.burst.handlerMs + ' ms + applying ' + mid.burst.applyMs + ' ms for 500 messages · frames ' + mid.burst.burst + ' vs ' + mid.burst.base + (realFps ? '' : ' (software GPU here — frame check runs on real hardware)'));
-  check('MIDI 5.0.1 mappings convert and work', /cc:1:21=knob/.test(mid.migrated) && /note:1:36=toggle/.test(mid.migrated) && mid.migratedWorks, mid.migrated);
-  check('MIDI starter profiles point at real controls', !mid.starters.missing.length, mid.starters.n + ' starters' + (mid.starters.missing.length ? ' · missing ' + mid.starters.missing.join(', ') : ''));
-  check('MIDI profile export / import', mid.profile);
-  check('MIDI tab: list, editor, curve, learn chips', mid.ui.rows > 0 && mid.ui.editor && mid.ui.curve && mid.ui.chips >= 15, JSON.stringify(mid.ui));
 
   check('no page errors', !errors.length, errors.slice(0, 3).join(' | '));
 } finally {

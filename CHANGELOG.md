@@ -1,60 +1,10 @@
 # XO LAB — Changelog
 
-## 5.1.0 — Advanced MIDI mapping
+## 5.0.1 — display fix
 
-### New: MIDI tab
-MIDI has its own tab now: controller and profiles, mappings, learn targets, and a live MIDI monitor.
-
-**Every kind of control behaves the way it should**
-- Knob (absolute), **endless encoder** (relative, with acceleration), **fader** (soft takeover, so values never jump), **crossfader** (morphs between Scene A and Scene B, with a centre dead zone).
-- Buttons: **momentary** (on while held), **toggle**, **trigger** (one shot).
-- **Pads with velocity** (hit strength sets the amount) and **pad pressure** (aftertouch).
-- **Jog wheels**, **pitch bend**, **14-bit knobs/faders** (CC + CC+32) and **program change** (loads scene slot n).
-- **MIDI clock:** "Sync tempo to MIDI clock" sets the BPM from your mixer / DJ software (new tempo source MIDI CLOCK) and follows start / stop.
-
-**MIDI LEARN detects the control.** Click a target, move the control, and the app tells what it is (e.g. endless encoder, two's complement). All three relative encoder formats are detected.
-
-**Per-mapping settings:** range (min / max), invert, curve (linear, exponential, logarithmic, S-curve) with a live graph, smoothing, soft takeover, encoder format, step + acceleration, button mode, velocity, centre dead zone, any MIDI channel, 14-bit.
-
-**What a control can drive:** any slider, switch, option (one option, or a knob that steps through them), scenes (load, next / previous, scene-select knob, scene slots), and live actions: play, tap tempo, blackout, freeze frame, strobe (while held, still behind the photosensitivity warning), randomize this tab, undo / redo, live audio, camera, save project.
-- **Macros:** up to 8 targets on one control, each with its own range, invert and curve.
-- **SHIFT layer:** any button can be SHIFT; while held, controls use their second mapping.
-
-**Profiles:** save, switch and delete profiles; export / import `.xomidi` files; optionally save the mappings inside `.xolab` projects. **Starter profiles** for Korg nanoKONTROL2, Akai MIDImix, Novation Launch Control XL, Akai APC mini mk2 and a generic pads + knobs layout (check with LEARN — numbers can vary with firmware or templates).
-
-**LED feedback** (optional): pad lights show which switches, actions and scene slots are on.
-
-**Live helpers:** Blackout and Freeze frame affect only the live preview, never exports.
-
-### Changed
-- 5.0.1 mappings are converted automatically.
-- MIDI moved from the Media tab to the new MIDI tab. On phones all 8 tabs fit on one row.
-- MIDI values are applied once per frame; 500 messages take about 3 ms to handle.
-
-### Tests
-- 22 new browser checks: knob range / invert / curves, encoder formats, detection and acceleration, fader soft takeover, momentary / toggle / trigger, velocity, pressure, 14-bit, pitch bend, macro, shift layer, crossfader morph, program change, MIDI clock, a 500-message burst, 5.0.1 migration, starter profiles, profile export / import and the MIDI tab UI.
-- Desktop app: the MIDI engine drives a slider.
-
-## 5.0.1 — Live input and MIDI
-
-### New
-- **Live audio input.** Media tab → **Live input** → **● START LIVE AUDIO**. The visuals react to a microphone, an audio interface or your DJ mixer's line-out instead of a track.
-  - Pick the input device from the list. **Live audio gain** goes up to 400% for quiet signals, and a level meter turns red when the signal is hot.
-  - The live signal is only analysed, never played through the speakers, so there's no feedback. The track is muted while live is on and comes back when you stop.
-- **Live camera as a visual.** **● START CAMERA** uses the webcam (Mac/PC) or the front/back camera (iPhone, with a ⇄ switch button).
-  - Every effect, filter, the strobe and blob tracking work on the live picture.
-  - **Mirror camera** is on for front cameras and webcams, off for back cameras.
-  - Export explains that a live camera can't be rendered offline (export still works with files).
-- **MIDI controllers** (Windows app, Mac app, Chrome, Edge). Media tab → **MIDI controller**.
-  - **MIDI LEARN:** click any slider, switch, option button, scene or button, then move a knob/fader or hit a pad.
-  - Knobs and faders follow the slider's full range. Pads press buttons, flip switches, pick options and load scenes.
-  - Mappings are listed (✕ removes one) and saved on the device. The desktop apps connect to controllers automatically.
-  - iPhone has no MIDI for apps like this; the panel says so.
-- Clear messages when the mic or camera is blocked, including where to turn it on (macOS Privacy & Security, iPhone Settings, or the browser).
-
-### Tests
-- Browser: live audio (level, gain, no speaker output, restore), live camera (picture on stage, blob tracking, export message, release), MIDI learn (knob → slider full range, pad → switch, saved mappings).
-- Desktop app: live audio, live camera and MIDI permission.
+### Fixed
+- **The display no longer jumps, goes black or hides UI when you click a button.** Toggle switches (e.g. Fixed size, Square lock) made the page taller than the window, so clicking one scrolled the whole app up: the top bar disappeared, the preview was cut off and the bottom of the window went black. The app is now locked to the window and only the settings panel scrolls.
+- The PROJECT button in the top bar and the COLORS links now scroll just the settings panel instead of the whole app.
 
 ## 5.0.0 — Phase 1: desktop apps + foundation
 

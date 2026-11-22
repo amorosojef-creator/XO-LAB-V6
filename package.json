@@ -1,6 +1,6 @@
 {
   "name": "xo-lab",
-  "version": "5.1.0",
+  "version": "5.0.1",
   "private": true,
   "description": "XO LAB — audio-reactive live visuals for DJs. Runs in the browser, on iPhone, Windows and macOS.",
   "scripts": {

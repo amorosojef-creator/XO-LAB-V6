@@ -45,7 +45,7 @@
     bar.insertBefore(box, $('#topStatus'));
     $('#undoBtn').addEventListener('click', undo);
     $('#redoBtn').addEventListener('click', redo);
-    $('#projectBtn').addEventListener('click', () => { XO.showTab('media'); const s = $('#projectSave'); if (s) s.scrollIntoView({ block: 'center', behavior: 'smooth' }); });
+    $('#projectBtn').addEventListener('click', () => { XO.showTab('media'); const s = $('#projectSave'); if (s) XO.revealInPanel(s, 'center'); });
     XO.history.onChange = (u, r) => { $('#undoBtn').disabled = !u; $('#redoBtn').disabled = !r; };
   }
 

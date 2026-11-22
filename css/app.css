@@ -207,7 +207,7 @@ select { width: 100%; min-height: 42px; border: 1px solid var(--line2); border-r
   .range::-webkit-slider-thumb { width: 22px; height: 22px; margin-top: -9.5px; }
   .tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; border-radius: 0; border: 0; border-top: 1px solid var(--line); background: #000; padding: 5px calc(4px + var(--sar)) calc(5px + var(--sab)) calc(4px + var(--sal)); overflow-x: auto; scrollbar-width: none; }
   .tabbar::-webkit-scrollbar { display: none; }
-  .tabbar button { min-width: 44px; min-height: 52px; font-size: 9.5px; letter-spacing: 0; padding: 0 1px; }
+  .tabbar button { min-width: 50px; min-height: 52px; font-size: 10px; }
   .tabbar svg { width: 21px; height: 21px; }
   .toast { bottom: calc(80px + var(--sab)); }
 }
@@ -351,49 +351,10 @@ html, body { touch-action: pan-x pan-y; -webkit-text-size-adjust: 100%; text-siz
   .top-title, .top-status { display: none; }
 }
 
-/* ---------- v5: live input + MIDI ---------- */
-.live-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-.live-row select { flex: 1 1 160px; min-width: 0; }
-.live-row .btn { flex: 0 0 auto; }
-.btn.on { background: var(--text); color: #000; border-color: var(--text); }
-.live-meter { height: 6px; margin: 10px 0 6px; border-radius: 3px; background: var(--panel2); border: 1px solid var(--line2); overflow: hidden; }
-.live-meter i { display: block; height: 100%; width: 0; background: var(--text); transition: width .06s linear; }
-.live-meter.hot i { background: #ff3b3b; }
-#cameraFlip { margin-top: 8px; width: 100%; }
-.midi-last { font-family: var(--mono); font-size: 10px; min-height: 14px; }
-.scene.midi-row small { font: 9px var(--mono); color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.midi-learning #panels [data-k], .midi-learning #panels [data-scene], .midi-learning .topbar button, .midi-learning .transport button { outline: 1px dashed rgba(255,255,255,.35); outline-offset: 2px; }
-.midi-target { outline: 2px solid #fff !important; outline-offset: 2px; }
-
-/* ---------- v5.1: MIDI tab ---------- */
-.midi-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-.midi-list { display: flex; flex-direction: column; gap: 6px; }
-.midi-map { border: 1px solid var(--line2); border-radius: 10px; background: var(--panel2); overflow: hidden; }
-.midi-map.sel { border-color: #777; }
-.midi-map.open { border-color: var(--text); }
-.midi-row { display: grid; grid-template-columns: 22px minmax(0, 0.9fr) minmax(0, 1.4fr) 64px; gap: 8px; align-items: center; width: 100%; padding: 9px 10px; background: none; border: 0; color: var(--text); text-align: left; font: 11px var(--mono); cursor: pointer; }
-.midi-row .ico { font-size: 14px; text-align: center; }
-.midi-row .src { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.midi-row .tgt { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.midi-row .bar { position: relative; height: 6px; border-radius: 3px; background: #000; border: 1px solid var(--line2); overflow: visible; }
-.midi-row .bar i { display: block; height: 100%; width: 0; background: var(--text); border-radius: 3px; }
-.midi-row .bar b { position: absolute; top: -3px; width: 2px; height: 12px; background: #888; left: -10px; }
-.midi-map.waiting .bar i { background: #666; }
-.midi-edit { padding: 4px 10px 12px; border-top: 1px solid var(--line2); display: flex; flex-direction: column; gap: 10px; }
-.me-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px 12px; }
-.me-grid label, .me-target label { display: flex; flex-direction: column; gap: 4px; font: 10px var(--mono); color: var(--muted); letter-spacing: .04em; }
-.me-grid label em { font-style: normal; color: var(--text); }
-.me-grid label.chk, .me-target label.chk { flex-direction: row; align-items: center; gap: 6px; color: var(--text); }
-.me-grid select, .me-grid input[type=number], .me-target select, .me-target input[type=number] { background: #000; color: var(--text); border: 1px solid var(--line2); border-radius: 6px; padding: 5px 6px; font: 11px var(--mono); }
-.me-target input[type=number] { width: 56px; }
-.me-curve canvas { width: 240px; max-width: 100%; height: 120px; background: #000; border: 1px solid var(--line2); border-radius: 8px; display: block; }
-.me-target { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: flex-end; padding: 8px; border: 1px dashed var(--line2); border-radius: 8px; }
-.me-target b { flex: 1 1 100%; font: 700 11px var(--mono); }
-.me-target label { flex-direction: row; align-items: center; }
-.midi-log { height: 150px; overflow: auto; background: #000; border: 1px solid var(--line2); border-radius: 8px; padding: 6px 8px; font: 10px/1.6 var(--mono); color: var(--muted); }
-.midi-log div:first-child { color: var(--text); }
-
-.midi-edit input, .midi-edit select, #midiPanel input { accent-color: #fff; }
-.midi-row .bar b { display: none; }
-.midi-map.waiting .bar b { display: block; }
-@media (max-width: 380px) { .tabbar button { font-size: 8.5px; } .tabbar svg { width: 19px; height: 19px; } }
+/* ---------- 5.0.1: the app never scrolls as a page ----------
+   Hidden toggle checkboxes used to be positioned against the window, which made the page taller than the
+   window. Clicking a toggle then scrolled the whole app up (top bar gone, preview cut off, black below). */
+.toggle { position: relative; }
+.panels { position: relative; }
+.app, .workspace, .side, .stage-col, .topbar, .transport, .stage { overflow: clip; }
+@supports not (overflow: clip) { .app, .workspace, .side, .stage-col, .topbar, .transport, .stage { overflow: hidden; } }

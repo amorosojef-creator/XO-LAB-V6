@@ -5,6 +5,23 @@
   const $ = (s, root) => (root || document).querySelector(s);
   const $$ = (s, root) => Array.from((root || document).querySelectorAll(s));
   XO.$ = $; XO.$$ = $$;
+
+  // Scroll the settings panel (and only the panel) so `el` is visible. scrollIntoView would also scroll the page.
+  XO.revealInPanel = function (el, where) {
+    const box = document.getElementById('panels'); if (!el || !box) return;
+    const r = el.getBoundingClientRect(), b = box.getBoundingClientRect();
+    let top = box.scrollTop + (r.top - b.top) - 8;
+    if (where === 'center') top -= (box.clientHeight - r.height) / 2 - 8;
+    box.scrollTo({ top: Math.max(0, top), behavior: where === 'center' ? 'smooth' : 'auto' });
+  };
+  // The app is a fixed screen: if anything ever scrolls the page itself, put it straight back.
+  const pinPage = () => {
+    if (window.scrollX || window.scrollY) window.scrollTo(0, 0);
+    const se = document.scrollingElement; if (se && (se.scrollTop || se.scrollLeft)) { se.scrollTop = 0; se.scrollLeft = 0; }
+    if (document.body && (document.body.scrollTop || document.body.scrollLeft)) { document.body.scrollTop = 0; document.body.scrollLeft = 0; }
+  };
+  window.addEventListener('scroll', pinPage, { passive: true });
+  document.addEventListener('scroll', (e) => { const t = e.target; if (t && t.nodeType === 1 && t.closest && t.closest('.app') && !t.closest('#panels') && t.id !== 'tabbar' && (t.scrollTop || t.scrollLeft)) { t.scrollTop = 0; t.scrollLeft = 0; } }, { capture: true, passive: true });
   const esc = (s) => String(s).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 
   XO.paintRange = function (el) {
@@ -154,7 +171,7 @@
       const sw = e.target.closest('[data-swatch]');
       if (sw) { const k = sw.parentElement.dataset.sw; commit(k, sw.dataset.swatch, null); return; }
       const cl = e.target.closest('[data-color-group]');
-      if (cl) { e.preventDefault(); e.stopPropagation(); XO.showTab('color'); const g = $('#cg-' + cl.dataset.colorGroup); if (g) { g.open = true; g.scrollIntoView({ block: 'start' }); g.classList.add('flash'); setTimeout(() => g.classList.remove('flash'), 900); } return; }
+      if (cl) { e.preventDefault(); e.stopPropagation(); XO.showTab('color'); const g = $('#cg-' + cl.dataset.colorGroup); if (g) { g.open = true; XO.revealInPanel(g); g.classList.add('flash'); setTimeout(() => g.classList.remove('flash'), 900); } return; }
       const rp = e.target.closest('[data-reset-panel]');
       if (rp) { const p = XO.SCHEMA.find((x) => x.id === rp.dataset.resetPanel); XO.resetPaths(p.keys.concat(p.extraReset || [])); if (XO.onReset) XO.onReset(p.id); XO.syncUI(); XO.toast(p.title + ' reset to defaults.'); }
     });
